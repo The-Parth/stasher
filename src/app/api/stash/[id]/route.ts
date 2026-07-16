@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { EncryptedPayload, EncryptedPayloadV2 } from '@/lib/types';
 import { hashEditToken } from '@/lib/crypto';
 
+export const dynamic = 'force-dynamic';
+
 function blobKey(id: string): string {
   return `stashes/${id}.json`;
 }
@@ -22,7 +24,8 @@ export async function GET(
       return NextResponse.json({ error: 'Stash not found.' }, { status: 404 });
     }
 
-    const response = await fetch(blobMeta.url);
+    const url = `${blobMeta.url}?t=${Date.now()}`;
+    const response = await fetch(url, { cache: 'no-store' });
     if (!response.ok) {
       return NextResponse.json({ error: 'Failed to fetch stash data.' }, { status: 502 });
     }
@@ -43,7 +46,8 @@ async function verifyAuth(id: string, request: NextRequest): Promise<NextRespons
     return NextResponse.json({ error: 'Stash not found.' }, { status: 404 });
   }
 
-  const response = await fetch(existingBlobMeta.url);
+  const url = `${existingBlobMeta.url}?t=${Date.now()}`;
+  const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) {
     return NextResponse.json({ error: 'Failed to fetch existing stash.' }, { status: 502 });
   }

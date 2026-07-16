@@ -117,7 +117,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
         const prePw = sessionStorage.getItem(`stash_pw_${id}`);
         sessionStorage.removeItem(`stash_pw_${id}`);
 
-        const res = await fetch(`/api/stash/${id}`);
+        const res = await fetch(`/api/stash/${id}`, { cache: 'no-store' });
         if (!res.ok) {
           const json = await res.json();
           setState({ status: 'error', message: json.error || 'Stash not found.' });

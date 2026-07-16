@@ -1,5 +1,5 @@
 // Schema version for future migrations
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 // ─── Link ────────────────────────────────────────────────────────────────────
 

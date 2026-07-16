@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     const blob = await put(
       blobKey(id),
-      JSON.stringify({ ...payload, schemaVersion: SCHEMA_VERSION }),
+      JSON.stringify({ ...payload, schemaVersion: payload.schemaVersion || SCHEMA_VERSION }),
       {
         access: 'public',
         contentType: 'application/json',
