@@ -38,7 +38,7 @@ async function deriveKeyGCM(password: string, salt: Uint8Array): Promise<CryptoK
     'raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     baseKey,
     { name: 'AES-GCM', length: KEY_LENGTH },
     false, ['encrypt', 'decrypt']
@@ -51,7 +51,7 @@ async function deriveKeyKW(password: string, salt: Uint8Array): Promise<CryptoKe
     'raw', encoder.encode(password), 'PBKDF2', false, ['deriveKey']
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     baseKey,
     { name: 'AES-KW', length: KEY_LENGTH },
     false, ['wrapKey', 'unwrapKey']
@@ -164,7 +164,9 @@ export async function encryptV2(
   }
 
   const editToken = await generateEditToken(adminPassword, stashId);
-  const authSalt = bufToB64(crypto.getRandomValues(new Uint8Array(SALT_LENGTH)));
+  const authSaltArray = new Uint8Array(SALT_LENGTH);
+  crypto.getRandomValues(authSaltArray);
+  const authSalt = bufToB64(authSaltArray.buffer);
   const authVerifyHash = await hashEditToken(editToken, authSalt);
 
   return {
