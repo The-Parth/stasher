@@ -13,6 +13,7 @@ interface LinkItemProps {
 export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
   const [showPreview, setShowPreview] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const [copied, setCopied] = useState(false);
   const isMedia = isMediaUrl(link.url);
   const canPreview = isInlinePreviewable(link.url);
   const mediaType = getMediaType(link.url);
@@ -25,6 +26,17 @@ export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
   // Derive a filename from the URL for the download attribute
   let filename = 'file';
   try { filename = decodeURIComponent(new URL(link.url).pathname.split('/').pop() || 'file'); } catch { /* ignore */ }
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(link.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+    }
+  };
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -122,6 +134,26 @@ export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
       </div>
 
       <div className="link-item-actions" style={{ opacity: 1 }}>
+        {/* Copy Link */}
+        <button
+          className="btn-icon"
+          title={copied ? 'Copied!' : 'Copy link'}
+          onClick={handleCopy}
+          aria-label={copied ? 'Copied link' : 'Copy link'}
+          style={{ color: copied ? 'var(--green)' : undefined }}
+        >
+          {copied ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          )}
+        </button>
+
         {/* Download button — always visible for any media link */}
         {isMedia && (
           <button
