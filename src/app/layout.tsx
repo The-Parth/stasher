@@ -18,6 +18,18 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          try {
+            var theme = localStorage.getItem('stasher_theme');
+            if (theme) {
+              var t = JSON.parse(theme);
+              document.documentElement.style.setProperty('--theme-h', t.h);
+              document.documentElement.style.setProperty('--theme-s', t.s + '%');
+            }
+          } catch (e) {}
+        `}} />
+      </head>
       <body className={inter.className}>
         <Navbar />
         {children}

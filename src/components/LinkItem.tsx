@@ -140,7 +140,7 @@ export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
           title={copied ? 'Copied!' : 'Copy link'}
           onClick={handleCopy}
           aria-label={copied ? 'Copied link' : 'Copy link'}
-          style={{ color: copied ? 'var(--green)' : undefined }}
+          style={{ color: copied ? 'var(--accent)' : undefined }}
         >
           {copied ? (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -187,7 +187,7 @@ export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
             title={showPreview ? 'Hide preview' : 'Preview'}
             onClick={() => setShowPreview(v => !v)}
             aria-label={showPreview ? 'Hide preview' : 'Preview'}
-            style={{ color: showPreview ? 'var(--green)' : undefined }}
+            style={{ color: showPreview ? 'var(--accent)' : undefined }}
           >
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
               <path d="M1 7.5S3.5 3 7.5 3s6.5 4.5 6.5 4.5S11.5 12 7.5 12 1 7.5 1 7.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>

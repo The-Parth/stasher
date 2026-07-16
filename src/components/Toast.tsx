@@ -23,7 +23,7 @@ export default function Toast({ message, type = 'info', duration = 3000, onDismi
 
   return (
     <div className={cls} role="alert" aria-live="polite">
-      <span style={{ color: type === 'success' ? 'var(--green)' : type === 'error' ? 'var(--error)' : 'var(--text-muted)', fontWeight: 600 }}>
+      <span style={{ color: type === 'success' ? 'var(--accent)' : type === 'error' ? 'var(--error)' : 'var(--text-muted)', fontWeight: 600 }}>
         {icons[type]}
       </span>
       {message}

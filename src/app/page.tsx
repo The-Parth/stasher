@@ -33,17 +33,17 @@ export default function HomePage() {
     <main className="landing-hero">
       <div className="landing-card">
         {/* Eyebrow */}
-        <div className="landing-eyebrow">
-          <span style={{ width: 6, height: 6, background: 'var(--green)', borderRadius: '50%', boxShadow: '0 0 6px var(--green)' }} />
+        <div className="landing-eyebrow" style={{ animationDelay: '100ms' }}>
+          <span style={{ width: 6, height: 6, background: 'var(--accent)', borderRadius: '50%', boxShadow: '0 0 6px var(--accent)' }} />
           Private · Encrypted
         </div>
 
         {/* Title */}
         <div>
-          <h1 className="landing-title">
-            Your links,<br />
-            <span style={{ color: 'var(--green)' }}>secured.</span>
-          </h1>
+          <h1 className="landing-title" style={{ animationDelay: '200ms', animationFillMode: 'both', animationName: 'slideUp' }}>
+          Your links, fully <br />
+          <span style={{ color: 'var(--accent)' }}>secured.</span>
+        </h1>
           <p className="landing-sub" style={{ marginTop: 'var(--space-3)' }}>
             A private, password-encrypted repository for all your links.
             No tracking, no indexing — just your stuff.
