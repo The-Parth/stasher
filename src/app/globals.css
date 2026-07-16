@@ -239,6 +239,8 @@ textarea.input { resize: vertical; min-height: 72px; }
   width: 14px; height: 14px; flex-shrink: 0; opacity: 0.5; transition: transform var(--transition);
 }
 .tree-chevron.open { transform: rotate(90deg); }
+.tree-item-actions { display: flex; opacity: 0; transition: opacity var(--transition); flex-shrink: 0; }
+.tree-item:hover .tree-item-actions { opacity: 1; }
 .tree-children {
   padding-left: var(--space-4); border-left: 1px solid var(--border-subtle);
   margin-left: 18px; margin-top: 2px; display: flex; flex-direction: column; gap: 2px;

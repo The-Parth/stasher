@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { generateStashId, validateStashId } from '@/lib/stash';
 
 interface CreateStashModalProps {
-  onSubmit: (name: string, id: string, password: string) => void;
+  onSubmit: (name: string, id: string, password: string, readPassword?: string) => void;
   onCancel: () => void;
   isLoading?: boolean;
   error?: string;
@@ -20,6 +20,7 @@ export default function CreateStashModal({
   const [useCustomId, setUseCustomId] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [readPassword, setReadPassword] = useState('');
   const [generatedId] = useState(() => generateStashId());
   const [localError, setLocalError] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
@@ -46,7 +47,7 @@ export default function CreateStashModal({
     const err = validate();
     if (err) { setLocalError(err); return; }
     setLocalError('');
-    onSubmit(name.trim(), finalId, password);
+    onSubmit(name.trim(), finalId, password, readPassword || undefined);
   };
 
   const displayError = error || localError;
@@ -84,6 +85,10 @@ export default function CreateStashModal({
           <div className="field">
             <label className="label" htmlFor="cs-cpw">Confirm password</label>
             <input id="cs-cpw" type="password" className={`input${confirmPassword && password !== confirmPassword ? ' input-error' : ''}`} placeholder="Repeat password…" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} disabled={isLoading} autoComplete="new-password" />
+          </div>
+          <div className="field">
+            <label className="label" htmlFor="cs-rpw">Read-only password (Optional)</label>
+            <input id="cs-rpw" type="password" className="input" placeholder="Allows read access without edit rights" value={readPassword} onChange={e => setReadPassword(e.target.value)} disabled={isLoading} autoComplete="new-password" />
           </div>
           {displayError && (
             <div style={{ background: 'var(--error-bg)', border: '1px solid var(--error)', borderRadius: 'var(--radius)', padding: 'var(--space-3) var(--space-4)', fontSize: '0.83rem', color: 'var(--error)' }}>

@@ -30,7 +30,7 @@ export default function HomePage() {
   };
 
   return (
-    <main className="landing-hero">
+    <main className="landing-hero" style={{ position: 'relative' }}>
       <div className="landing-card">
         {/* Eyebrow */}
         <div className="landing-eyebrow" style={{ animationDelay: '100ms' }}>
@@ -91,6 +91,20 @@ export default function HomePage() {
         <p className="text-sm text-muted" style={{ textAlign: 'center', lineHeight: 1.8 }}>
           Click <span className="badge badge-green" style={{ verticalAlign: 'middle', fontSize: '0.7rem' }}>+ New Stash</span> in the top bar to create one.
         </p>
+      </div>
+
+      <div style={{
+        position: 'absolute',
+        bottom: 'var(--space-6)',
+        width: '100%',
+        textAlign: 'center',
+        fontSize: '0.75rem',
+        color: 'var(--text-muted)',
+        animation: 'fadeIn 1s ease 1s both'
+      }}>
+        Made with ♥ by <a href="https://github.com/The-Parth" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>The-Parth</a>
+        <br />
+        <span style={{ opacity: 0.25, fontSize: '0.65rem', marginTop: 'var(--space-1)', display: 'inline-block' }}>I love Koishi :3</span>
       </div>
     </main>
   );

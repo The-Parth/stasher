@@ -6,8 +6,8 @@ import { useState } from 'react';
 
 interface LinkItemProps {
   link: StashLink;
-  onEdit: (link: StashLink) => void;
-  onDelete: (id: string) => void;
+  onEdit?: (link: StashLink) => void;
+  onDelete?: (id: string) => void;
 }
 
 export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
@@ -196,19 +196,21 @@ export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
           </button>
         )}
 
-        {/* Edit */}
-        <button className="btn-icon" title="Edit link" onClick={() => onEdit(link)} aria-label="Edit link">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M9.5 2.5l2 2-7 7H2.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-          </svg>
-        </button>
-
-        {/* Delete */}
-        <button className="btn-icon" title="Delete link" onClick={() => onDelete(link.id)} aria-label="Delete link" style={{ color: 'var(--error)' }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M2 3.5h10M5 3.5V2.5h4v1M5.5 6v4M8.5 6v4M3 3.5l.7 8h6.6l.7-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
+        {/* Edit & Delete */}
+        {onEdit && (
+          <button className="btn-icon" title="Edit link" onClick={() => onEdit(link)} aria-label="Edit link">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M9.5 2.5l2 2-7 7H2.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        )}
+        {onDelete && (
+          <button className="btn-icon" title="Delete link" onClick={() => onDelete(link.id)} aria-label="Delete link" style={{ color: 'var(--error)' }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+              <path d="M2 3.5h10M5 3.5V2.5h4v1M5.5 6v4M8.5 6v4M3 3.5l.7 8h6.6l.7-8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

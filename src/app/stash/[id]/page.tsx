@@ -1,7 +1,7 @@
 'use client';
 import { use, useCallback, useEffect, useRef, useState } from 'react';
-import type { Stash, StashLink, StashSection, EncryptedPayload } from '@/lib/types';
-import { decrypt, encrypt } from '@/lib/crypto';
+import type { Stash, StashLink, StashSection, EncryptedPayload, EncryptedPayloadV2 } from '@/lib/types';
+import { decrypt, encryptV1, encryptV2, updatePayloadV2 } from '@/lib/crypto';
 import { getSectionByPath, touchStash, getViewTarget, createSection, createLink } from '@/lib/stash';
 import SectionTree from '@/components/SectionTree';
 import PasswordModal from '@/components/PasswordModal';
@@ -9,11 +9,12 @@ import LinkItem from '@/components/LinkItem';
 import LinkForm from '@/components/LinkForm';
 import SectionForm from '@/components/SectionForm';
 import Toast from '@/components/Toast';
+import StashSettingsModal from '@/components/StashSettingsModal';
 
 type LoadState =
   | { status: 'loading' }
   | { status: 'awaiting-password'; payload: EncryptedPayload }
-  | { status: 'ready'; stash: Stash; password: string }
+  | { status: 'ready'; stash: Stash; password: string; role: 'admin' | 'read'; masterKey?: CryptoKey; editToken?: string; payload: EncryptedPayload }
   | { status: 'error'; message: string };
 
 type EditMode =
@@ -83,6 +84,17 @@ function updateSectionMeta(stash: Stash, path: string[], updated: StashSection):
   return touchStash({ ...stash, sections: updateInList(stash.sections, path) });
 }
 
+function deleteSectionAtPath(sections: StashSection[], path: string[]): StashSection[] {
+  const [head, ...rest] = path;
+  if (rest.length === 0) {
+    return sections.filter(s => s.id !== head);
+  }
+  return sections.map(s => {
+    if (s.id !== head) return s;
+    return { ...s, children: deleteSectionAtPath(s.children, rest) };
+  });
+}
+
 // ─── Page Component ────────────────────────────────────────────────────────────
 
 export default function StashPage({ params }: { params: Promise<{ id: string }> }) {
@@ -94,6 +106,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Fetch encrypted payload on mount ──────────────────────────────────────
@@ -114,8 +127,8 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
 
         if (prePw) {
           try {
-            const stash = await decrypt<Stash>(payload, prePw);
-            setState({ status: 'ready', stash, password: prePw });
+            const { data: stash, role, masterKey, editToken } = await decrypt<Stash>(payload, prePw);
+            setState({ status: 'ready', stash, password: prePw, role, masterKey, editToken, payload });
             return;
           } catch { /* fall through to password prompt */ }
         }
@@ -128,30 +141,52 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
   }, [id]);
 
   // ── Auto-save when stash changes ──────────────────────────────────────────
-  const saveStash = useCallback(async (stash: Stash, password: string) => {
+  const saveStash = useCallback(async (stash: Stash, currentState: LoadState) => {
+    if (currentState.status !== 'ready' || currentState.role === 'read') return;
     setSaving(true);
     try {
-      const { salt, iv, ciphertext } = await encrypt(stash, password);
-      const payload: EncryptedPayload = { schemaVersion: 1, stashId: id, salt, iv, ciphertext };
+      let payload: EncryptedPayload;
+      let newEditToken = currentState.editToken;
+      let newMasterKey = currentState.masterKey;
+
+      if (currentState.payload.schemaVersion === 1) {
+        payload = await encryptV2(stash, id, currentState.password);
+        // We could extract the new editToken/masterKey from encryptV2, but for simplicity
+        // on upgrade, we'll just let the next reload fetch it. (Though they won't need to reload
+        // as the state already has them as undefined, but actually they do need them to save again!)
+        // So let's re-decrypt it quickly to get the new tokens.
+        const { masterKey, editToken } = await decrypt<Stash>(payload, currentState.password);
+        newMasterKey = masterKey;
+        newEditToken = editToken;
+      } else {
+        payload = await updatePayloadV2(stash, currentState.masterKey!, currentState.payload as EncryptedPayloadV2);
+      }
+      
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (newEditToken) headers['Authorization'] = `Bearer ${newEditToken}`;
+
       const res = await fetch(`/api/stash/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const json = await res.json();
         setToast({ message: json.error || 'Save failed.', type: 'error' });
+      } else {
+        setState(prev => prev.status === 'ready' ? { ...prev, payload, editToken: newEditToken, masterKey: newMasterKey } : prev);
       }
-    } catch {
+    } catch (e) {
+      console.error(e);
       setToast({ message: 'Save failed. Check your connection.', type: 'error' });
     } finally {
       setSaving(false);
     }
   }, [id]);
 
-  const scheduleAutoSave = useCallback((stash: Stash, password: string) => {
+  const scheduleAutoSave = useCallback((stash: Stash, currentState: LoadState) => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => saveStash(stash, password), 1500);
+    saveTimeoutRef.current = setTimeout(() => saveStash(stash, currentState), 1500);
   }, [saveStash]);
 
   // ── Unlock ────────────────────────────────────────────────────────────────
@@ -159,8 +194,8 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
     if (state.status !== 'awaiting-password') return;
     setPwError('');
     try {
-      const stash = await decrypt<Stash>(state.payload, password);
-      setState({ status: 'ready', stash, password });
+      const { data: stash, role, masterKey, editToken } = await decrypt<Stash>(state.payload, password);
+      setState({ status: 'ready', stash, password, role, masterKey, editToken, payload: state.payload });
     } catch {
       setPwError('Wrong password. Try again.');
     }
@@ -169,8 +204,9 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
   // ── Mutation helpers ──────────────────────────────────────────────────────
   const updateStash = (updated: Stash) => {
     if (state.status !== 'ready') return;
-    setState({ ...state, stash: updated });
-    scheduleAutoSave(updated, state.password);
+    const newState = { ...state, stash: updated };
+    setState(newState);
+    scheduleAutoSave(updated, newState);
   };
 
   const handleSaveLink = (link: StashLink) => {
@@ -199,6 +235,19 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
     }
     updateStash(updated);
     setEditMode({ type: 'none' });
+  };
+
+  const handleDeleteSection = (path: string[]) => {
+    if (state.status !== 'ready') return;
+    const updated = touchStash({ ...state.stash, sections: deleteSectionAtPath(state.stash.sections, path) });
+    updateStash(updated);
+    
+    // If the active path is the deleted section (or inside it), go to parent
+    const isUnderDeleted = activePath.length >= path.length && path.every((id, i) => activePath[i] === id);
+    if (isUnderDeleted) {
+      setActivePath(path.slice(0, -1));
+      setEditMode({ type: 'none' });
+    }
   };
 
   // ── View state ────────────────────────────────────────────────────────────
@@ -253,11 +302,12 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
             activePath={activePath}
             onSelectRoot={() => { setActivePath([]); setEditMode({ type: 'none' }); setSidebarOpen(false); }}
             onSelectSection={(path) => { setActivePath(path); setEditMode({ type: 'none' }); setSidebarOpen(false); }}
-            onAddSection={(parentPath) => {
+            onAddSection={state.role === 'admin' ? (parentPath) => {
               setActivePath(parentPath);
               setEditMode({ type: 'add-section', parentPath });
               setSidebarOpen(false);
-            }}
+            } : undefined}
+            onDeleteSection={state.role === 'admin' ? handleDeleteSection : undefined}
           />
         </aside>
 
@@ -292,7 +342,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
               {saving && <span className="spinner spinner-sm" aria-label="Saving…" title="Saving…" />}
               <span className="badge badge-muted">{stash.id}</span>
 
-              {activeSection && editMode.type === 'none' && (
+              {activeSection && editMode.type === 'none' && state.role === 'admin' && (
                 <button
                   className="btn btn-ghost btn-sm"
                   onClick={() => setEditMode({ type: 'edit-section', section: activeSection, path: activePath })}
@@ -302,14 +352,26 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
                 </button>
               )}
 
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={() => setEditMode({ type: 'add-link' })}
-                id="add-link-btn"
-                disabled={editMode.type === 'add-link'}
-              >
-                + Add link
-              </button>
+              {state.role === 'admin' && (
+                <>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowSettings(true)}
+                    id="settings-btn"
+                    title="Stash Settings"
+                  >
+                    ⚙
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => setEditMode({ type: 'add-link' })}
+                    id="add-link-btn"
+                    disabled={editMode.type === 'add-link'}
+                  >
+                    + Add link
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -369,8 +431,8 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
               <LinkItem
                 key={link.id}
                 link={link}
-                onEdit={(l) => setEditMode({ type: 'edit-link', link: l })}
-                onDelete={handleDeleteLink}
+                onEdit={state.role === 'admin' ? (l) => setEditMode({ type: 'edit-link', link: l }) : undefined}
+                onDelete={state.role === 'admin' ? handleDeleteLink : undefined}
               />
             ))}
           </div>
@@ -380,18 +442,39 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
             <div className="empty-state">
               <div className="empty-state-icon">⊚</div>
               <div className="empty-state-title">Nothing here yet</div>
-              <p className="empty-state-desc">
-                Add your first link with the <strong>+ Add link</strong> button, or create a section using the sidebar.
-              </p>
-              <button className="btn btn-primary btn-sm" onClick={() => setEditMode({ type: 'add-link' })} id="empty-add-link-btn">
-                + Add link
-              </button>
+              {state.role === 'admin' ? (
+                <>
+                  <p className="empty-state-desc">
+                    Add your first link with the <strong>+ Add link</strong> button, or create a section using the sidebar.
+                  </p>
+                  <button className="btn btn-primary btn-sm" onClick={() => setEditMode({ type: 'add-link' })} id="empty-add-link-btn">
+                    + Add link
+                  </button>
+                </>
+              ) : (
+                <p className="empty-state-desc">
+                  This stash is currently empty.
+                </p>
+              )}
             </div>
           )}
         </main>
       </div>
 
       {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
+
+      {showSettings && state.status === 'ready' && state.payload.schemaVersion === 2 && (
+        <StashSettingsModal
+          stashId={id}
+          payload={state.payload as EncryptedPayloadV2}
+          masterKey={state.masterKey!}
+          editToken={state.editToken!}
+          onClose={() => setShowSettings(false)}
+          onUpdated={(newPayload, newEditToken) => {
+            setState(prev => prev.status === 'ready' ? { ...prev, payload: newPayload, editToken: newEditToken } : prev);
+          }}
+        />
+      )}
 
       {/* Sidebar backdrop on mobile */}
       {sidebarOpen && (

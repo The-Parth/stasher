@@ -35,12 +35,30 @@ export interface Stash {
 
 // ─── Encrypted Payload (stored in Vercel Blob) ─────────────────────────────
 
-export interface EncryptedPayload {
-  schemaVersion: number;
+export type EncryptedPayload = EncryptedPayloadV1 | EncryptedPayloadV2;
+
+export interface EncryptedPayloadV1 {
+  schemaVersion: 1;
   stashId: string;
   salt: string;       // base64-encoded
   iv: string;         // base64-encoded
   ciphertext: string; // base64-encoded
+}
+
+export interface EncryptedPayloadV2 {
+  schemaVersion: 2;
+  stashId: string;
+  
+  iv: string;         // base64-encoded
+  ciphertext: string; // base64-encoded
+
+  masterSalt: string;        // base64-encoded
+  masterWrappedKey: string;  // base64-encoded
+  authVerifyHash: string;    // base64-encoded
+  authSalt: string;          // base64-encoded
+
+  readSalt?: string;         // base64-encoded
+  readWrappedKey?: string;   // base64-encoded
 }
 
 // ─── Media types ─────────────────────────────────────────────────────────────

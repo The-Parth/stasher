@@ -7,7 +7,8 @@ interface SectionTreeProps {
   activePath: string[];
   onSelectRoot: () => void;
   onSelectSection: (path: string[]) => void;
-  onAddSection: (parentPath: string[]) => void;
+  onAddSection?: (parentPath: string[]) => void;
+  onDeleteSection?: (path: string[]) => void;
   depth?: number;
   parentPath?: string[];
 }
@@ -26,13 +27,15 @@ function SectionNode({
   currentPath,
   onSelectSection,
   onAddSection,
+  onDeleteSection,
   depth,
 }: {
   section: StashSection;
   activePath: string[];
   currentPath: string[];
   onSelectSection: (path: string[]) => void;
-  onAddSection: (parentPath: string[]) => void;
+  onAddSection?: (parentPath: string[]) => void;
+  onDeleteSection?: (path: string[]) => void;
   depth: number;
 }) {
   const myPath = [...currentPath, section.id];
@@ -67,6 +70,26 @@ function SectionNode({
         <span className="badge badge-muted" style={{ fontSize: '0.65rem', padding: '1px 5px' }}>
           {section.links.length}
         </span>
+        {onDeleteSection && (
+          <div className="tree-item-actions">
+            <button
+              className="btn-icon"
+              style={{ padding: '2px', color: 'var(--error)' }}
+              title="Delete section"
+              onClick={e => {
+                e.stopPropagation();
+                if (confirm(`Delete section "${section.title}" and all its contents?`)) {
+                  onDeleteSection(myPath);
+                }
+              }}
+              aria-label="Delete section"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
       {open && (
@@ -79,10 +102,11 @@ function SectionNode({
               currentPath={myPath}
               onSelectSection={onSelectSection}
               onAddSection={onAddSection}
+              onDeleteSection={onDeleteSection}
               depth={depth + 1}
             />
           ))}
-          {canNest && (
+          {canNest && onAddSection && (
             <button className="tree-add-btn" onClick={() => onAddSection(myPath)} id={`add-section-${section.id}`}>
               <span>+</span> Add section
             </button>
@@ -99,6 +123,7 @@ export default function SectionTree({
   onSelectRoot,
   onSelectSection,
   onAddSection,
+  onDeleteSection,
 }: SectionTreeProps) {
   const isRootActive = activePath.length === 0;
 
@@ -125,13 +150,16 @@ export default function SectionTree({
           currentPath={[]}
           onSelectSection={onSelectSection}
           onAddSection={onAddSection}
+          onDeleteSection={onDeleteSection}
           depth={1}
         />
       ))}
 
-      <button className="tree-add-btn" onClick={() => onAddSection([])} style={{ marginTop: 'var(--space-2)' }} id="add-root-section-btn">
-        <span>+</span> Add section
-      </button>
+      {onAddSection && (
+        <button className="tree-add-btn" onClick={() => onAddSection([])} style={{ marginTop: 'var(--space-2)' }} id="add-root-section-btn">
+          <span>+</span> Add section
+        </button>
+      )}
     </div>
   );
 }
