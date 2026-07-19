@@ -310,6 +310,83 @@ textarea.input { resize: vertical; min-height: 72px; }
 .form-panel-title { font-size: 0.875rem; font-weight: 600; }
 .form-actions { display: flex; gap: var(--space-2); justify-content: flex-end; }
 
+/* ─── Section cards ──────────────────────────────────────────────────────────── */
+.section-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4); cursor: pointer; text-align: left;
+  transition: all var(--transition); position: relative; width: 100%;
+}
+.section-card:hover { border-color: #3a3d45; background: var(--surface-hover); }
+
+/* ─── Drag handles ───────────────────────────────────────────────────────────── */
+.drag-handle {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-disabled); cursor: grab; touch-action: none;
+  padding: var(--space-1); border-radius: var(--radius-sm);
+  transition: all var(--transition); flex-shrink: 0;
+}
+.drag-handle:hover { color: var(--text-muted); background: var(--surface-active); }
+.drag-handle:active { cursor: grabbing; color: var(--accent); }
+.section-drag-handle {
+  position: absolute; top: 6px; right: 6px; padding: 2px;
+}
+
+/* ─── Search bar ─────────────────────────────────────────────────────────────── */
+.search-bar-container { position: relative; flex: 1; max-width: 280px; min-width: 140px; }
+.search-bar {
+  display: flex; align-items: center; gap: var(--space-2);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 0 var(--space-3); transition: all var(--transition); height: 32px;
+}
+.search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.search-bar-icon { color: var(--text-muted); flex-shrink: 0; }
+.search-bar-input {
+  flex: 1; background: none; border: none; outline: none;
+  font-size: 0.8rem; color: var(--text); padding: 0; min-width: 0;
+  font-family: var(--font-sans);
+}
+.search-bar-input::placeholder { color: var(--text-muted); }
+
+/* ─── Search results dropdown ────────────────────────────────────────────────── */
+.search-results {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); z-index: 500; max-height: 340px; overflow-y: auto;
+  animation: scaleIn 120ms ease; padding: var(--space-1);
+}
+.search-empty {
+  padding: var(--space-4); text-align: center;
+  font-size: 0.8rem; color: var(--text-muted);
+}
+.search-result-item {
+  display: flex; align-items: flex-start; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm);
+  cursor: pointer; width: 100%; text-align: left; background: none; border: none;
+  color: var(--text); font-family: var(--font-sans); transition: background var(--transition);
+}
+.search-result-item:hover, .search-result-item.selected { background: var(--surface-hover); }
+.search-result-type {
+  color: var(--text-muted); flex-shrink: 0; margin-top: 2px;
+}
+.search-result-content { flex: 1; min-width: 0; }
+.search-result-label {
+  font-size: 0.82rem; font-weight: 500; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.search-result-meta {
+  display: flex; flex-direction: column; gap: 1px; margin-top: 1px;
+}
+.search-result-breadcrumb {
+  font-size: 0.7rem; color: var(--text-muted);
+}
+.search-result-url {
+  font-size: 0.7rem; color: var(--accent); font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.search-result-subtitle {
+  font-size: 0.7rem; color: var(--text-muted);
+}
+
 /* ─── Responsive ─────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .sidebar { display: none; position: fixed; top: 54px; left: 0; bottom: 0; width: 280px; background: var(--surface); z-index: 200; border-right: 1px solid var(--border); box-shadow: var(--shadow-lg); }
@@ -317,4 +394,8 @@ textarea.input { resize: vertical; min-height: 72px; }
   .main-content { padding: var(--space-4); }
   .landing-title { font-size: 2rem; }
   #sidebar-toggle { display: inline-flex !important; }
+  .search-bar-container { max-width: 100%; }
+  .content-header { flex-wrap: wrap; }
+  .link-item-actions { opacity: 1; }
 }
+

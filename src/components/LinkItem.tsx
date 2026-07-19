@@ -8,9 +8,10 @@ interface LinkItemProps {
   link: StashLink;
   onEdit?: (link: StashLink) => void;
   onDelete?: (id: string) => void;
+  dragHandleProps?: Record<string, unknown>;
 }
 
-export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
+export default function LinkItem({ link, onEdit, onDelete, dragHandleProps }: LinkItemProps) {
   const [showPreview, setShowPreview] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
@@ -109,6 +110,15 @@ export default function LinkItem({ link, onEdit, onDelete }: LinkItemProps) {
 
   return (
     <div className="link-item">
+      {dragHandleProps && (
+        <span className="drag-handle" {...dragHandleProps} aria-label="Drag to reorder">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <circle cx="5" cy="3" r="1.5" /><circle cx="11" cy="3" r="1.5" />
+            <circle cx="5" cy="8" r="1.5" /><circle cx="11" cy="8" r="1.5" />
+            <circle cx="5" cy="13" r="1.5" /><circle cx="11" cy="13" r="1.5" />
+          </svg>
+        </span>
+      )}
       <div className="link-item-main">
         {/* Media type badge */}
         {isMedia && (

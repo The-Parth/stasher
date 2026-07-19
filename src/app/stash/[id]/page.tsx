@@ -10,6 +10,11 @@ import LinkForm from '@/components/LinkForm';
 import SectionForm from '@/components/SectionForm';
 import Toast from '@/components/Toast';
 import StashSettingsModal from '@/components/StashSettingsModal';
+import SearchBar from '@/components/SearchBar';
+import SortableLink from '@/components/SortableLink';
+import SortableSectionCard from '@/components/SortableSectionCard';
+import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, rectSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 
 type LoadState =
   | { status: 'loading' }
@@ -250,6 +255,53 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
     }
   };
 
+  // ── Reorder helpers ────────────────────────────────────────────────────────
+  const handleReorderLinks = (oldIndex: number, newIndex: number) => {
+    if (state.status !== 'ready') return;
+    const updated = updateLinksAtPath(state.stash, activePath, (links) => arrayMove(links, oldIndex, newIndex));
+    updateStash(updated);
+  };
+
+  const handleReorderSections = (oldIndex: number, newIndex: number) => {
+    if (state.status !== 'ready') return;
+    if (activePath.length === 0) {
+      const reordered = arrayMove(state.stash.sections, oldIndex, newIndex);
+      updateStash(touchStash({ ...state.stash, sections: reordered }));
+    } else {
+      // Reorder children of the active section
+      const updateChildren = (sections: StashSection[], path: string[]): StashSection[] => {
+        const [head, ...rest] = path;
+        return sections.map(s => {
+          if (s.id !== head) return s;
+          if (rest.length === 0) return { ...s, children: arrayMove(s.children, oldIndex, newIndex) };
+          return { ...s, children: updateChildren(s.children, rest) };
+        });
+      };
+      updateStash(touchStash({ ...state.stash, sections: updateChildren(state.stash.sections, activePath) }));
+    }
+  };
+
+  // ── DnD sensors ────────────────────────────────────────────────────────────
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } });
+  const touchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } });
+  const sensors = useSensors(pointerSensor, touchSensor);
+
+  const handleLinkDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = links.findIndex(l => l.id === active.id);
+    const newIndex = links.findIndex(l => l.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) handleReorderLinks(oldIndex, newIndex);
+  };
+
+  const handleSectionDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sections.findIndex(s => s.id === active.id);
+    const newIndex = sections.findIndex(s => s.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) handleReorderSections(oldIndex, newIndex);
+  };
+
   // ── View state ────────────────────────────────────────────────────────────
   if (state.status === 'loading') {
     return (
@@ -338,6 +390,12 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
               )}
             </div>
 
+            <SearchBar
+              stash={stash}
+              onNavigateToSection={(path) => { setActivePath(path); setEditMode({ type: 'none' }); }}
+              onNavigateToLink={(sectionPath) => { setActivePath(sectionPath); setEditMode({ type: 'none' }); }}
+            />
+
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>
               {saving && <span className="spinner spinner-sm" aria-label="Saving…" title="Saving…" />}
               <span className="badge badge-muted">{stash.id}</span>
@@ -397,26 +455,40 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
           {sections.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
               <div className="sidebar-header" style={{ paddingLeft: 0 }}>Sub-sections</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-3)' }}>
-                {sections.map(sec => (
-                  <button
-                    key={sec.id}
-                    className="card-sm"
-                    style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 'var(--space-3) var(--space-4)', cursor: 'pointer', textAlign: 'left', transition: 'all var(--transition)' }}
-                    onClick={() => { setActivePath([...activePath, sec.id]); setEditMode({ type: 'none' }); }}
-                    onMouseEnter={e => (e.currentTarget.style.borderColor = '#3a3d45')}
-                    onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-                    id={`section-card-${sec.id}`}
-                  >
-                    <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {sec.title}
+              {state.role === 'admin' ? (
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
+                  <SortableContext items={sections.map(s => s.id)} strategy={rectSortingStrategy}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-3)' }}>
+                      {sections.map(sec => (
+                        <SortableSectionCard
+                          key={sec.id}
+                          section={sec}
+                          isAdmin={true}
+                          onClick={() => { setActivePath([...activePath, sec.id]); setEditMode({ type: 'none' }); }}
+                        />
+                      ))}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {sec.links.length} link{sec.links.length !== 1 ? 's' : ''} · {sec.children.length} section{sec.children.length !== 1 ? 's' : ''}
-                    </div>
-                  </button>
-                ))}
-              </div>
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--space-3)' }}>
+                  {sections.map(sec => (
+                    <button
+                      key={sec.id}
+                      className="card-sm section-card"
+                      onClick={() => { setActivePath([...activePath, sec.id]); setEditMode({ type: 'none' }); }}
+                      id={`section-card-${sec.id}`}
+                    >
+                      <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text)', marginBottom: '4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {sec.title}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {sec.links.length} link{sec.links.length !== 1 ? 's' : ''} · {sec.children.length} section{sec.children.length !== 1 ? 's' : ''}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -427,14 +499,27 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
                 Links <span className="badge badge-muted" style={{ marginLeft: 'var(--space-2)' }}>{links.length}</span>
               </div>
             )}
-            {links.map(link => (
-              <LinkItem
-                key={link.id}
-                link={link}
-                onEdit={state.role === 'admin' ? (l) => setEditMode({ type: 'edit-link', link: l }) : undefined}
-                onDelete={state.role === 'admin' ? handleDeleteLink : undefined}
-              />
-            ))}
+            {state.role === 'admin' ? (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleLinkDragEnd}>
+                <SortableContext items={links.map(l => l.id)} strategy={verticalListSortingStrategy}>
+                  {links.map(link => (
+                    <SortableLink
+                      key={link.id}
+                      link={link}
+                      onEdit={(l) => setEditMode({ type: 'edit-link', link: l })}
+                      onDelete={handleDeleteLink}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
+            ) : (
+              links.map(link => (
+                <LinkItem
+                  key={link.id}
+                  link={link}
+                />
+              ))
+            )}
           </div>
 
           {/* Empty state */}
