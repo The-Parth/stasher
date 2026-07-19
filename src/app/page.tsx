@@ -1,12 +1,56 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import CloneStashModal from '@/components/CloneStashModal';
+import { decrypt, encryptV2 } from '@/lib/crypto';
+import type { Stash, EncryptedPayload } from '@/lib/types';
 
 export default function HomePage() {
   const [stashId, setStashId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showCloneModal, setShowCloneModal] = useState(false);
   const router = useRouter();
+
+  const handleVerifySource = async (id: string, password: string): Promise<Stash> => {
+    const res = await fetch(`/api/stash/${id}`);
+    if (!res.ok) throw new Error('Source stash not found.');
+    const payload = await res.json() as EncryptedPayload;
+    try {
+      const result = await decrypt<Stash>(payload, password);
+      return result.data;
+    } catch {
+      throw new Error('Incorrect password for source stash.');
+    }
+  };
+
+  const handleCloneSubmit = async (sourceStash: Stash, newName: string, newId: string, newPassword: string) => {
+    const checkRes = await fetch(`/api/stash/${newId}`);
+    if (checkRes.ok) throw new Error(`Stash ID "${newId}" is already taken.`);
+    
+    const updatedStash: Stash = {
+      ...sourceStash,
+      id: newId,
+      name: newName,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    
+    const payload = await encryptV2(updatedStash, newId, newPassword);
+    const saveRes = await fetch('/api/stash', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: newId, payload })
+    });
+    
+    if (!saveRes.ok) {
+      const err = await saveRes.json();
+      throw new Error(err.error || 'Failed to clone stash.');
+    }
+    
+    setShowCloneModal(false);
+    router.push(`/stash/${newId}`);
+  };
 
   const handleOpen = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +135,23 @@ export default function HomePage() {
         <p className="text-sm text-muted" style={{ textAlign: 'center', lineHeight: 1.8 }}>
           Click <span className="badge badge-green" style={{ verticalAlign: 'middle', fontSize: '0.7rem' }}>+ New Stash</span> in the top bar to create one.
         </p>
+
+        <button 
+          className="btn btn-secondary" 
+          style={{ width: '100%' }}
+          onClick={() => setShowCloneModal(true)}
+        >
+          Clone a Stash
+        </button>
       </div>
+
+      {showCloneModal && (
+        <CloneStashModal
+          onVerifySource={handleVerifySource}
+          onSubmit={handleCloneSubmit}
+          onCancel={() => setShowCloneModal(false)}
+        />
+      )}
 
       <div style={{
         position: 'absolute',
@@ -105,6 +165,22 @@ export default function HomePage() {
         Made with ♥ by <a href="https://github.com/The-Parth" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>The-Parth</a>
         <br />
         <span style={{ opacity: 0.25, fontSize: '0.65rem', marginTop: 'var(--space-1)', display: 'inline-block' }}>I love Koishi :3</span>
+        <br />
+        <span style={{ opacity: 0.3, fontSize: '0.65rem', marginTop: 'var(--space-1)', display: 'inline-block', fontFamily: 'var(--font-mono)' }}>
+          Build:{' '}
+          {process.env.NEXT_PUBLIC_APP_VERSION ? (
+            <a 
+              href={`https://github.com/The-Parth/stasher/commit/${process.env.NEXT_PUBLIC_APP_VERSION}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'underline' }}
+            >
+              {process.env.NEXT_PUBLIC_APP_VERSION}
+            </a>
+          ) : (
+            'unknown'
+          )}
+        </span>
       </div>
     </main>
   );
