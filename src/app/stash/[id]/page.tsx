@@ -145,6 +145,10 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
     load();
   }, [id]);
 
+  // ── Size limits ────────────────────────────────────────────────────────────
+  const SIZE_WARN = 4 * 1024 * 1024;    // 4 MB
+  const SIZE_BLOCK = 4.45 * 1024 * 1024; // 4.45 MB
+
   // ── Auto-save when stash changes ──────────────────────────────────────────
   const saveStash = useCallback(async (stash: Stash, currentState: LoadState) => {
     if (currentState.status !== 'ready' || currentState.role === 'read') return;
@@ -167,13 +171,25 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
         payload = await updatePayloadV2(stash, currentState.masterKey!, currentState.payload as EncryptedPayloadV2);
       }
       
+      const bodyStr = JSON.stringify(payload);
+      const bodySize = new Blob([bodyStr]).size;
+
+      if (bodySize > SIZE_BLOCK) {
+        setToast({ message: `Stash too large (${(bodySize / 1024 / 1024).toFixed(1)} MB). Remove some items to continue saving.`, type: 'error' });
+        setSaving(false);
+        return;
+      }
+      if (bodySize > SIZE_WARN) {
+        setToast({ message: `⚠ Stash is getting large (${(bodySize / 1024 / 1024).toFixed(1)} MB / 4.5 MB). Consider removing unused links.`, type: 'error' });
+      }
+
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (newEditToken) headers['Authorization'] = `Bearer ${newEditToken}`;
 
       const res = await fetch(`/api/stash/${id}`, {
         method: 'PUT',
         headers,
-        body: JSON.stringify(payload),
+        body: bodyStr,
       });
       if (!res.ok) {
         const json = await res.json();
@@ -216,22 +232,26 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
 
   const handleSaveLink = (link: StashLink) => {
     if (state.status !== 'ready') return;
+    const isEdit = editMode.type === 'edit-link';
     const updated = updateLinksAtPath(state.stash, activePath, (links) => {
       const idx = links.findIndex(l => l.id === link.id);
       return idx >= 0 ? links.map(l => l.id === link.id ? link : l) : [...links, link];
     });
     updateStash(updated);
     setEditMode({ type: 'none' });
+    setToast({ message: isEdit ? 'Link updated' : 'Link added', type: 'success' });
   };
 
   const handleDeleteLink = (linkId: string) => {
     if (state.status !== 'ready') return;
     const updated = updateLinksAtPath(state.stash, activePath, (links) => links.filter(l => l.id !== linkId));
     updateStash(updated);
+    setToast({ message: 'Link deleted', type: 'success' });
   };
 
   const handleSaveSection = (section: StashSection) => {
     if (state.status !== 'ready' || editMode.type !== 'add-section' && editMode.type !== 'edit-section') return;
+    const isEdit = editMode.type === 'edit-section';
     let updated: Stash;
     if (editMode.type === 'add-section') {
       updated = addSectionAtPath(state.stash, editMode.parentPath, section);
@@ -240,12 +260,14 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
     }
     updateStash(updated);
     setEditMode({ type: 'none' });
+    setToast({ message: isEdit ? 'Section updated' : 'Section created', type: 'success' });
   };
 
   const handleDeleteSection = (path: string[]) => {
     if (state.status !== 'ready') return;
     const updated = touchStash({ ...state.stash, sections: deleteSectionAtPath(state.stash.sections, path) });
     updateStash(updated);
+    setToast({ message: 'Section deleted', type: 'success' });
     
     // If the active path is the deleted section (or inside it), go to parent
     const isUnderDeleted = activePath.length >= path.length && path.every((id, i) => activePath[i] === id);
@@ -361,6 +383,21 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
             } : undefined}
             onDeleteSection={state.role === 'admin' ? handleDeleteSection : undefined}
           />
+          <div style={{ marginTop: 'auto', paddingTop: 'var(--space-4)', fontSize: '0.7rem', color: 'var(--text-disabled)', fontFamily: 'var(--font-mono)', textAlign: 'center' }}>
+            Build:{' '}
+            {process.env.NEXT_PUBLIC_APP_VERSION ? (
+              <a 
+                href={`https://github.com/The-Parth/stasher/commit/${process.env.NEXT_PUBLIC_APP_VERSION}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: 'var(--border)' }}
+              >
+                {process.env.NEXT_PUBLIC_APP_VERSION}
+              </a>
+            ) : (
+              'unknown'
+            )}
+          </div>
         </aside>
 
         {/* Main content */}
@@ -393,7 +430,20 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
             <SearchBar
               stash={stash}
               onNavigateToSection={(path) => { setActivePath(path); setEditMode({ type: 'none' }); }}
-              onNavigateToLink={(sectionPath) => { setActivePath(sectionPath); setEditMode({ type: 'none' }); }}
+              onNavigateToLink={(sectionPath, link) => {
+                setActivePath(sectionPath);
+                setEditMode({ type: 'none' });
+                // Scroll to the link after React re-renders the new section
+                setTimeout(() => {
+                  const el = document.querySelector(`[data-link-id="${link.id}"]`);
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Brief highlight flash
+                    el.classList.add('search-highlight');
+                    setTimeout(() => el.classList.remove('search-highlight'), 1500);
+                  }
+                }, 100);
+              }}
             />
 
             <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexShrink: 0 }}>

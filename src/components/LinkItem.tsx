@@ -109,7 +109,7 @@ export default function LinkItem({ link, onEdit, onDelete, dragHandleProps }: Li
   };
 
   return (
-    <div className="link-item">
+    <div className="link-item" data-link-id={link.id}>
       {dragHandleProps && (
         <span className="drag-handle" {...dragHandleProps} aria-label="Drag to reorder">
           <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
