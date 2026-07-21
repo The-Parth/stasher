@@ -6,7 +6,7 @@ import ThemeModal from './ThemeModal';
 import { useRouter } from 'next/navigation';
 import type { EncryptedPayload } from '@/lib/types';
 import { createDefaultStash, generateStashId } from '@/lib/stash';
-import { encryptV2 } from '@/lib/crypto';
+import { encryptV3 } from '@/lib/crypto';
 import Toast from './Toast';
 
 export default function Navbar() {
@@ -22,7 +22,7 @@ export default function Navbar() {
     setCreateError('');
     try {
       const stash = createDefaultStash(name, id);
-      const payload = await encryptV2(stash, id, password, readPassword);
+      const payload = await encryptV3(stash, id, password, readPassword);
 
       const res = await fetch('/api/stash', {
         method: 'POST',

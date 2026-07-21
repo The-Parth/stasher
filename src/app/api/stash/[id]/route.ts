@@ -1,6 +1,6 @@
 import { put, head, del } from '@vercel/blob';
 import { NextRequest, NextResponse } from 'next/server';
-import type { EncryptedPayload, EncryptedPayloadV2 } from '@/lib/types';
+import type { EncryptedPayload, EncryptedPayloadV2, EncryptedPayloadV3 } from '@/lib/types';
 import { hashEditToken } from '@/lib/crypto';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +31,11 @@ export async function GET(
     }
 
     const payload = await response.json() as EncryptedPayload;
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, {
+      headers: {
+        'X-Stash-Version': blobMeta.uploadedAt.toISOString()
+      }
+    });
   } catch (err) {
     console.error('[GET /api/stash/[id]] Error:', err);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
@@ -74,6 +78,22 @@ async function verifyAuth(id: string, request: NextRequest): Promise<NextRespons
     return null; // OK
   }
 
+  if (existingPayload.schemaVersion === 3) {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+    }
+    const token = authHeader.replace('Bearer ', '').trim();
+    const p3 = existingPayload as EncryptedPayloadV3;
+    
+    // Compare SHA256(derived_token + salt) with stored verifier
+    const computedHash = await hashEditToken(token, p3.authTokenSalt);
+    if (computedHash !== p3.authTokenVerifier) {
+      return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
+    }
+    return null; // OK
+  }
+
   return NextResponse.json({ error: 'Unsupported schema version.' }, { status: 400 });
 }
 
@@ -89,6 +109,23 @@ export async function PUT(
     const authError = await verifyAuth(id, request);
     if (authError) return authError;
 
+    // Concurrency check
+    const clientVersion = request.headers.get('X-Stash-Version');
+    if (clientVersion) {
+      try {
+        const blobMeta = await head(blobKey(id));
+        const serverVersion = blobMeta.uploadedAt.toISOString();
+        if (clientVersion !== serverVersion) {
+          return NextResponse.json(
+            { error: 'Conflict: stash was modified by another session. Refresh to see the latest.', conflict: true },
+            { status: 409 }
+          );
+        }
+      } catch {
+        // Ignore if blob not found
+      }
+    }
+
     const payload = await request.json() as EncryptedPayload;
 
     await put(
@@ -102,7 +139,8 @@ export async function PUT(
       }
     );
 
-    return NextResponse.json({ success: true });
+    const updatedMeta = await head(blobKey(id));
+    return NextResponse.json({ success: true, version: updatedMeta.uploadedAt.toISOString() });
   } catch (err) {
     console.error('[PUT /api/stash/[id]] Error:', err);
     return NextResponse.json({ error: 'Failed to save stash. Please try again.' }, { status: 500 });

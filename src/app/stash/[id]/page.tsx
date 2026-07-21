@@ -1,7 +1,7 @@
 'use client';
 import { use, useCallback, useEffect, useRef, useState } from 'react';
-import type { Stash, StashLink, StashSection, EncryptedPayload, EncryptedPayloadV2 } from '@/lib/types';
-import { decrypt, encryptV1, encryptV2, updatePayloadV2 } from '@/lib/crypto';
+import type { Stash, StashLink, StashSection, EncryptedPayload, EncryptedPayloadV2, EncryptedPayloadV3 } from '@/lib/types';
+import { decrypt, encryptV1, encryptV2, updatePayloadV2, encryptV3, updatePayloadV3 } from '@/lib/crypto';
 import { getSectionByPath, touchStash, getViewTarget, createSection, createLink } from '@/lib/stash';
 import SectionTree from '@/components/SectionTree';
 import PasswordModal from '@/components/PasswordModal';
@@ -18,9 +18,9 @@ import { SortableContext, verticalListSortingStrategy, rectSortingStrategy, arra
 
 type LoadState =
   | { status: 'loading' }
-  | { status: 'awaiting-password'; payload: EncryptedPayload }
-  | { status: 'ready'; stash: Stash; password: string; role: 'admin' | 'read'; masterKey?: CryptoKey; editToken?: string; payload: EncryptedPayload }
-  | { status: 'error'; message: string };
+  | { status: 'error'; message: string }
+  | { status: 'awaiting-password'; payload: EncryptedPayload; blobVersion?: string }
+  | { status: 'ready'; stash: Stash; password: string; role: 'admin' | 'read'; masterKey?: CryptoKey; editToken?: string; payload: EncryptedPayload; blobVersion?: string };
 
 type EditMode =
   | { type: 'none' }
@@ -129,15 +129,16 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
           return;
         }
         const payload = await res.json() as EncryptedPayload;
+        const blobVersion = res.headers.get('X-Stash-Version') || undefined;
 
         if (prePw) {
           try {
             const { data: stash, role, masterKey, editToken } = await decrypt<Stash>(payload, prePw);
-            setState({ status: 'ready', stash, password: prePw, role, masterKey, editToken, payload });
+            setState({ status: 'ready', stash, password: prePw, role, masterKey, editToken, payload, blobVersion });
             return;
           } catch { /* fall through to password prompt */ }
         }
-        setState({ status: 'awaiting-password', payload });
+        setState({ status: 'awaiting-password', payload, blobVersion });
       } catch {
         setState({ status: 'error', message: 'Failed to load stash. Check your connection.' });
       }
@@ -158,9 +159,9 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
       let newEditToken = currentState.editToken;
       let newMasterKey = currentState.masterKey;
 
-      if (currentState.payload.schemaVersion === 1) {
-        payload = await encryptV2(stash, id, currentState.password);
-        // We could extract the new editToken/masterKey from encryptV2, but for simplicity
+      if (currentState.payload.schemaVersion === 1 || currentState.payload.schemaVersion === 2) {
+        payload = await encryptV3(stash, id, currentState.password);
+        // We could extract the new editToken/masterKey from encryptV3, but for simplicity
         // on upgrade, we'll just let the next reload fetch it. (Though they won't need to reload
         // as the state already has them as undefined, but actually they do need them to save again!)
         // So let's re-decrypt it quickly to get the new tokens.
@@ -168,7 +169,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
         newMasterKey = masterKey;
         newEditToken = editToken;
       } else {
-        payload = await updatePayloadV2(stash, currentState.masterKey!, currentState.payload as EncryptedPayloadV2);
+        payload = await updatePayloadV3(stash, currentState.masterKey!, currentState.payload as EncryptedPayloadV3);
       }
       
       const bodyStr = JSON.stringify(payload);
@@ -185,6 +186,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (newEditToken) headers['Authorization'] = `Bearer ${newEditToken}`;
+      if (currentState.blobVersion) headers['X-Stash-Version'] = currentState.blobVersion;
 
       const res = await fetch(`/api/stash/${id}`, {
         method: 'PUT',
@@ -192,10 +194,17 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
         body: bodyStr,
       });
       if (!res.ok) {
+        if (res.status === 409) {
+          setToast({ message: 'This stash was modified elsewhere. Please refresh to see the latest changes.', type: 'error' });
+          setSaving(false);
+          return;
+        }
         const json = await res.json();
         setToast({ message: json.error || 'Save failed.', type: 'error' });
       } else {
-        setState(prev => prev.status === 'ready' ? { ...prev, payload, editToken: newEditToken, masterKey: newMasterKey } : prev);
+        const json = await res.json();
+        const newBlobVersion = json.version || currentState.blobVersion;
+        setState(prev => prev.status === 'ready' ? { ...prev, payload, editToken: newEditToken, masterKey: newMasterKey, blobVersion: newBlobVersion } : prev);
       }
     } catch (e) {
       console.error(e);
@@ -216,7 +225,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
     setPwError('');
     try {
       const { data: stash, role, masterKey, editToken } = await decrypt<Stash>(state.payload, password);
-      setState({ status: 'ready', stash, password, role, masterKey, editToken, payload: state.payload });
+      setState({ status: 'ready', stash, password, role, masterKey, editToken, payload: state.payload, blobVersion: state.blobVersion });
     } catch {
       setPwError('Wrong password. Try again.');
     }
@@ -598,10 +607,10 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
 
       {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
 
-      {showSettings && state.status === 'ready' && state.payload.schemaVersion === 2 && (
+      {showSettings && state.status === 'ready' && state.payload.schemaVersion >= 2 && (
         <StashSettingsModal
           stashId={id}
-          payload={state.payload as EncryptedPayloadV2}
+          payload={state.payload as EncryptedPayload}
           masterKey={state.masterKey!}
           editToken={state.editToken!}
           onClose={() => setShowSettings(false)}
