@@ -45,7 +45,7 @@ export async function encryptAndSave(
   masterKey: CryptoKey | undefined,
   oldPayload: EncryptedPayload
 ): Promise<void> {
-  if (role !== 'admin' || !masterKey) {
+  if (role !== 'admin') {
     throw new Error('Read-only access. Cannot modify.');
   }
 
@@ -53,6 +53,9 @@ export async function encryptAndSave(
   if (oldPayload.schemaVersion === 1) {
     newPayload = await encryptV3(stash, id, password);
   } else if (oldPayload.schemaVersion === 2) {
+    if (!masterKey) {
+      throw new Error('Missing master key for schema v2 save.');
+    }
     newPayload = (await encryptV3WithExistingMasterKey(
       stash,
       id,
@@ -61,6 +64,9 @@ export async function encryptAndSave(
       oldPayload
     )).payload;
   } else {
+    if (!masterKey) {
+      throw new Error('Missing master key for schema v3 save.');
+    }
     newPayload = await updatePayloadV3(stash, masterKey, oldPayload as EncryptedPayloadV3);
   }
 

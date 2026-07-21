@@ -158,6 +158,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
       let payload: EncryptedPayload;
       let newEditToken = currentState.editToken;
       let newMasterKey = currentState.masterKey;
+      let requestEditToken = currentState.editToken;
 
       if (currentState.payload.schemaVersion === 1) {
         payload = await encryptV3(stash, id, currentState.password);
@@ -179,6 +180,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
         payload = upgradeResult.payload;
         newMasterKey = currentState.masterKey;
         newEditToken = upgradeResult.editToken;
+        requestEditToken = currentState.editToken;
       } else {
         payload = await updatePayloadV3(stash, currentState.masterKey!, currentState.payload as EncryptedPayloadV3);
       }
@@ -196,7 +198,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
       }
 
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (newEditToken) headers['Authorization'] = `Bearer ${newEditToken}`;
+      if (requestEditToken) headers['Authorization'] = `Bearer ${requestEditToken}`;
       if (currentState.blobVersion) headers['X-Stash-Version'] = currentState.blobVersion;
 
       const res = await fetch(`/api/stash/${id}`, {

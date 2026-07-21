@@ -118,18 +118,10 @@ export default function StashSettingsModal({
         readWrappedKey = wrapped.wrappedKey;
       }
 
-      const authTokenSaltArray = new Uint8Array(16);
-      crypto.getRandomValues(authTokenSaltArray);
-      const authTokenSalt = bufToB64(authTokenSaltArray.buffer);
-      const authTokenVerifier = await hashEditToken(editToken, authTokenSalt);
-      
       const newPayload: EncryptedPayloadV3 = {
         ...(payload as EncryptedPayloadV3),
-        schemaVersion: 3,
         readSalt,
         readWrappedKey,
-        authTokenSalt,
-        authTokenVerifier,
       };
 
       // If newReadPw is empty, we remove the read credentials.
