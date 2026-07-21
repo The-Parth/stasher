@@ -1,5 +1,5 @@
 import { head, put } from '@vercel/blob';
-import { decrypt, encryptV3, updatePayloadV3 } from './crypto';
+import { decrypt, encryptV3, encryptV3WithExistingMasterKey, updatePayloadV3 } from './crypto';
 import type { Stash, StashLink, StashSection, EncryptedPayload, EncryptedPayloadV3 } from './types';
 import { createLink, createSection, generateItemId, touchStash } from './stash';
 
@@ -50,8 +50,16 @@ export async function encryptAndSave(
   }
 
   let newPayload: EncryptedPayloadV3;
-  if (oldPayload.schemaVersion === 1 || oldPayload.schemaVersion === 2) {
+  if (oldPayload.schemaVersion === 1) {
     newPayload = await encryptV3(stash, id, password);
+  } else if (oldPayload.schemaVersion === 2) {
+    newPayload = (await encryptV3WithExistingMasterKey(
+      stash,
+      id,
+      masterKey,
+      password,
+      oldPayload
+    )).payload;
   } else {
     newPayload = await updatePayloadV3(stash, masterKey, oldPayload as EncryptedPayloadV3);
   }

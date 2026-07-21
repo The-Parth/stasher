@@ -1,7 +1,7 @@
 'use client';
 import { use, useCallback, useEffect, useRef, useState } from 'react';
 import type { Stash, StashLink, StashSection, EncryptedPayload, EncryptedPayloadV2, EncryptedPayloadV3 } from '@/lib/types';
-import { decrypt, encryptV1, encryptV2, updatePayloadV2, encryptV3, updatePayloadV3 } from '@/lib/crypto';
+import { decrypt, encryptV1, encryptV2, updatePayloadV2, encryptV3, encryptV3WithExistingMasterKey, updatePayloadV3 } from '@/lib/crypto';
 import { getSectionByPath, touchStash, getViewTarget, createSection, createLink } from '@/lib/stash';
 import SectionTree from '@/components/SectionTree';
 import PasswordModal from '@/components/PasswordModal';
@@ -159,7 +159,7 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
       let newEditToken = currentState.editToken;
       let newMasterKey = currentState.masterKey;
 
-      if (currentState.payload.schemaVersion === 1 || currentState.payload.schemaVersion === 2) {
+      if (currentState.payload.schemaVersion === 1) {
         payload = await encryptV3(stash, id, currentState.password);
         // We could extract the new editToken/masterKey from encryptV3, but for simplicity
         // on upgrade, we'll just let the next reload fetch it. (Though they won't need to reload
@@ -168,6 +168,17 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
         const { masterKey, editToken } = await decrypt<Stash>(payload, currentState.password);
         newMasterKey = masterKey;
         newEditToken = editToken;
+      } else if (currentState.payload.schemaVersion === 2) {
+        const upgradeResult = await encryptV3WithExistingMasterKey(
+          stash,
+          id,
+          currentState.masterKey!,
+          currentState.password,
+          currentState.payload as EncryptedPayloadV2
+        );
+        payload = upgradeResult.payload;
+        newMasterKey = currentState.masterKey;
+        newEditToken = upgradeResult.editToken;
       } else {
         payload = await updatePayloadV3(stash, currentState.masterKey!, currentState.payload as EncryptedPayloadV3);
       }
@@ -614,8 +625,9 @@ export default function StashPage({ params }: { params: Promise<{ id: string }> 
           masterKey={state.masterKey!}
           editToken={state.editToken!}
           onClose={() => setShowSettings(false)}
-          onUpdated={(newPayload, newEditToken) => {
-            setState(prev => prev.status === 'ready' ? { ...prev, payload: newPayload, editToken: newEditToken } : prev);
+          blobVersion={state.blobVersion}
+          onUpdated={(newPayload, newEditToken, newBlobVersion) => {
+            setState(prev => prev.status === 'ready' ? { ...prev, payload: newPayload, editToken: newEditToken, blobVersion: newBlobVersion || prev.blobVersion } : prev);
           }}
         />
       )}

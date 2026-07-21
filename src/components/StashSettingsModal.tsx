@@ -1,16 +1,26 @@
 'use client';
 import { useState } from 'react';
-import type { EncryptedPayload, EncryptedPayloadV2, EncryptedPayloadV3 } from '@/lib/types';
+import type { EncryptedPayload, EncryptedPayloadV3 } from '@/lib/types';
 import { generateEditTokenV3, hashEditToken, wrapMasterKey, bufToB64 } from '@/lib/crypto';
 import { useRouter } from 'next/navigation';
+
+type V2LegacyAuthFields = {
+  authVerifyHash?: string;
+  authSalt?: string;
+};
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'An error occurred.';
+}
 
 interface StashSettingsModalProps {
   stashId: string;
   payload: EncryptedPayload;
   masterKey: CryptoKey;
   editToken: string;
+  blobVersion?: string;
   onClose: () => void;
-  onUpdated: (newPayload: EncryptedPayloadV3, newEditToken: string) => void;
+  onUpdated: (newPayload: EncryptedPayload, newEditToken: string, newBlobVersion?: string) => void;
 }
 
 export default function StashSettingsModal({
@@ -18,6 +28,7 @@ export default function StashSettingsModal({
   payload,
   masterKey,
   editToken,
+  blobVersion,
   onClose,
   onUpdated,
 }: StashSettingsModalProps) {
@@ -57,35 +68,37 @@ export default function StashSettingsModal({
       const newEditToken = await generateEditTokenV3(newMasterPw, stashId, authTokenSaltArray);
       const authTokenVerifier = await hashEditToken(newEditToken, authTokenSalt);
 
+      const payloadWithoutLegacyAuth = { ...(payload as EncryptedPayloadV3 & V2LegacyAuthFields) };
+      delete payloadWithoutLegacyAuth.authVerifyHash;
+      delete payloadWithoutLegacyAuth.authSalt;
+
       const newPayload: EncryptedPayloadV3 = {
-        ...payload,
+        ...payloadWithoutLegacyAuth,
         schemaVersion: 3,
         masterSalt,
         masterWrappedKey,
         authTokenSalt,
         authTokenVerifier,
       };
-      
-      // Clean up V2 auth fields if upgrading
-      if ('authVerifyHash' in newPayload) delete (newPayload as any).authVerifyHash;
-      if ('authSalt' in newPayload) delete (newPayload as any).authSalt;
 
       const res = await fetch(`/api/stash/${stashId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${editToken}`
+          'Authorization': `Bearer ${editToken}`,
+          ...(blobVersion ? { 'X-Stash-Version': blobVersion } : {})
         },
         body: JSON.stringify(newPayload),
       });
 
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to update.');
+      const json = await res.json();
       
       setSuccess('Master password changed successfully!');
       setNewMasterPw(''); setConfirmMasterPw('');
-      onUpdated(newPayload, newEditToken);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred.');
+      onUpdated(newPayload, newEditToken, json.version || blobVersion);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -130,18 +143,20 @@ export default function StashSettingsModal({
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${editToken}`
+          'Authorization': `Bearer ${editToken}`,
+          ...(blobVersion ? { 'X-Stash-Version': blobVersion } : {})
         },
         body: JSON.stringify(newPayload),
       });
 
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to update.');
+      const json = await res.json();
       
       setSuccess(newReadPw ? 'Read-only password updated!' : 'Read-only password removed!');
       setNewReadPw(''); setConfirmReadPw('');
-      onUpdated(newPayload, editToken);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred.');
+      onUpdated(newPayload, editToken, json.version || blobVersion);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -157,14 +172,15 @@ export default function StashSettingsModal({
       const res = await fetch(`/api/stash/${stashId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${editToken}`
+          'Authorization': `Bearer ${editToken}`,
+          ...(blobVersion ? { 'X-Stash-Version': blobVersion } : {})
         },
       });
 
       if (!res.ok) throw new Error((await res.json()).error || 'Failed to delete.');
       router.push('/');
-    } catch (err: any) {
-      setError(err.message || 'An error occurred.');
+    } catch (error: unknown) {
+      setError(getErrorMessage(error));
       setLoading(false);
     }
   };

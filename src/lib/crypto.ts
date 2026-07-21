@@ -84,7 +84,7 @@ export async function generateEditTokenV3(password: string, stashId: string, sal
     'raw', encoder.encode(password + stashId), 'PBKDF2', false, ['deriveBits']
   );
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: salt as any, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     baseKey,
     256 // 32 bytes
   );
@@ -108,6 +108,69 @@ export async function wrapMasterKey(masterKey: CryptoKey, password: string): Pro
   return {
     salt: bufToB64(salt.buffer),
     wrappedKey: bufToB64(wrapped)
+  };
+}
+
+type ReadCredentials = {
+  readSalt?: string;
+  readWrappedKey?: string;
+};
+
+export interface EncryptResultV3 {
+  payload: EncryptedPayloadV3;
+  editToken: string;
+}
+
+async function buildEncryptResultV3(
+  data: object,
+  stashId: string,
+  masterKey: CryptoKey,
+  adminPassword: string,
+  options?: {
+    readPassword?: string;
+    preserveReadCredentials?: ReadCredentials;
+  }
+): Promise<EncryptResultV3> {
+  const encoder = new TextEncoder();
+  const plaintext = encoder.encode(JSON.stringify(data));
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+
+  const ciphertextBuf = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    masterKey,
+    plaintext
+  );
+
+  const { salt: masterSalt, wrappedKey: masterWrappedKey } = await wrapMasterKey(masterKey, adminPassword);
+
+  let readSalt = options?.preserveReadCredentials?.readSalt;
+  let readWrappedKey = options?.preserveReadCredentials?.readWrappedKey;
+  if (options?.readPassword) {
+    const wrapped = await wrapMasterKey(masterKey, options.readPassword);
+    readSalt = wrapped.salt;
+    readWrappedKey = wrapped.wrappedKey;
+  }
+
+  const authTokenSaltArray = new Uint8Array(SALT_LENGTH);
+  crypto.getRandomValues(authTokenSaltArray);
+  const editToken = await generateEditTokenV3(adminPassword, stashId, authTokenSaltArray);
+  const authTokenSalt = bufToB64(authTokenSaltArray.buffer);
+
+  const authTokenVerifier = await hashEditToken(editToken, authTokenSalt);
+
+  return {
+    editToken,
+    payload: {
+      schemaVersion: 3,
+      stashId,
+      iv: bufToB64(iv.buffer),
+      ciphertext: bufToB64(ciphertextBuf),
+      masterSalt,
+      masterWrappedKey,
+      authTokenSalt,
+      authTokenVerifier,
+      ...(readSalt && readWrappedKey ? { readSalt, readWrappedKey } : {})
+    }
   };
 }
 
@@ -339,45 +402,18 @@ export async function encryptV3(
   adminPassword: string,
   readPassword?: string
 ): Promise<EncryptedPayloadV3> {
-  const encoder = new TextEncoder();
-  const plaintext = encoder.encode(JSON.stringify(data));
-  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
-  
   const masterKey = await generateMasterKey();
-  const ciphertextBuf = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    masterKey,
-    plaintext
-  );
+  return (await buildEncryptResultV3(data, stashId, masterKey, adminPassword, { readPassword })).payload;
+}
 
-  const { salt: masterSalt, wrappedKey: masterWrappedKey } = await wrapMasterKey(masterKey, adminPassword);
-  
-  let readSalt, readWrappedKey;
-  if (readPassword) {
-    const wrapped = await wrapMasterKey(masterKey, readPassword);
-    readSalt = wrapped.salt;
-    readWrappedKey = wrapped.wrappedKey;
-  }
-
-  const authTokenSaltArray = new Uint8Array(SALT_LENGTH);
-  crypto.getRandomValues(authTokenSaltArray);
-  const editToken = await generateEditTokenV3(adminPassword, stashId, authTokenSaltArray);
-  const authTokenSalt = bufToB64(authTokenSaltArray.buffer);
-  
-  // Store a hash of the derived token + salt so we can compare it server-side without reversing PBKDF2
-  const authTokenVerifier = await hashEditToken(editToken, authTokenSalt);
-
-  return {
-    schemaVersion: 3,
-    stashId,
-    iv: bufToB64(iv.buffer),
-    ciphertext: bufToB64(ciphertextBuf),
-    masterSalt,
-    masterWrappedKey,
-    authTokenSalt,
-    authTokenVerifier,
-    ...(readSalt && readWrappedKey ? { readSalt, readWrappedKey } : {})
-  };
+export async function encryptV3WithExistingMasterKey(
+  data: object,
+  stashId: string,
+  masterKey: CryptoKey,
+  adminPassword: string,
+  preserveReadCredentials?: ReadCredentials
+): Promise<EncryptResultV3> {
+  return buildEncryptResultV3(data, stashId, masterKey, adminPassword, { preserveReadCredentials });
 }
 
 export async function updatePayloadV3(

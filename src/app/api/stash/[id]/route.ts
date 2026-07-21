@@ -159,6 +159,22 @@ export async function DELETE(
     const authError = await verifyAuth(id, request);
     if (authError) return authError;
 
+    const clientVersion = request.headers.get('X-Stash-Version');
+    if (clientVersion) {
+      try {
+        const blobMeta = await head(blobKey(id));
+        const serverVersion = blobMeta.uploadedAt.toISOString();
+        if (clientVersion !== serverVersion) {
+          return NextResponse.json(
+            { error: 'Conflict: stash was modified by another session. Refresh to see the latest.', conflict: true },
+            { status: 409 }
+          );
+        }
+      } catch {
+        // Ignore if blob not found
+      }
+    }
+
     await del(blobKey(id));
     return NextResponse.json({ success: true });
   } catch (err) {
