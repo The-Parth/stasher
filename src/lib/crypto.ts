@@ -3,7 +3,7 @@
  * Browser-native WebCrypto utilities for AES-GCM and Key Wrapping.
  */
 
-import type { EncryptedPayload, EncryptedPayloadV1, EncryptedPayloadV2 } from './types';
+import type { EncryptedPayload, EncryptedPayloadV1, EncryptedPayloadV2, EncryptedPayloadV3 } from './types';
 
 const PBKDF2_ITERATIONS = 250_000;
 const KEY_LENGTH = 256;
@@ -78,6 +78,20 @@ export async function hashEditToken(tokenB64: string, saltB64: string): Promise<
   return bufToB64(hashBuf);
 }
 
+export async function generateEditTokenV3(password: string, stashId: string, salt: Uint8Array): Promise<string> {
+  const encoder = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    'raw', encoder.encode(password + stashId), 'PBKDF2', false, ['deriveBits']
+  );
+  const saltBuffer = new Uint8Array(salt).buffer;
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBuffer, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    baseKey,
+    256 // 32 bytes
+  );
+  return bufToB64(bits);
+}
+
 // ─── Key Wrapping ────────────────────────────────────────────────────────────
 
 export async function generateMasterKey(): Promise<CryptoKey> {
@@ -95,6 +109,69 @@ export async function wrapMasterKey(masterKey: CryptoKey, password: string): Pro
   return {
     salt: bufToB64(salt.buffer),
     wrappedKey: bufToB64(wrapped)
+  };
+}
+
+type ReadCredentials = {
+  readSalt?: string;
+  readWrappedKey?: string;
+};
+
+export interface EncryptResultV3 {
+  payload: EncryptedPayloadV3;
+  editToken: string;
+}
+
+async function buildEncryptResultV3(
+  data: object,
+  stashId: string,
+  masterKey: CryptoKey,
+  adminPassword: string,
+  options?: {
+    readPassword?: string;
+    preserveReadCredentials?: ReadCredentials;
+  }
+): Promise<EncryptResultV3> {
+  const encoder = new TextEncoder();
+  const plaintext = encoder.encode(JSON.stringify(data));
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+
+  const ciphertextBuf = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    masterKey,
+    plaintext
+  );
+
+  const { salt: masterSalt, wrappedKey: masterWrappedKey } = await wrapMasterKey(masterKey, adminPassword);
+
+  let readSalt = options?.preserveReadCredentials?.readSalt;
+  let readWrappedKey = options?.preserveReadCredentials?.readWrappedKey;
+  if (options?.readPassword) {
+    const wrapped = await wrapMasterKey(masterKey, options.readPassword);
+    readSalt = wrapped.salt;
+    readWrappedKey = wrapped.wrappedKey;
+  }
+
+  const authTokenSaltArray = new Uint8Array(SALT_LENGTH);
+  crypto.getRandomValues(authTokenSaltArray);
+  const editToken = await generateEditTokenV3(adminPassword, stashId, authTokenSaltArray);
+  const authTokenSalt = bufToB64(authTokenSaltArray.buffer);
+
+  const authTokenVerifier = await hashEditToken(editToken, authTokenSalt);
+
+  return {
+    editToken,
+    payload: {
+      schemaVersion: 3,
+      stashId,
+      iv: bufToB64(iv.buffer),
+      ciphertext: bufToB64(ciphertextBuf),
+      masterSalt,
+      masterWrappedKey,
+      authTokenSalt,
+      authTokenVerifier,
+      ...(readSalt && readWrappedKey ? { readSalt, readWrappedKey } : {})
+    }
   };
 }
 
@@ -251,6 +328,46 @@ export async function decrypt<T = unknown>(
     }
   }
 
+  if (payload.schemaVersion === 3) {
+    const p3 = payload as EncryptedPayloadV3;
+    let masterKey: CryptoKey | null = null;
+    let role: 'admin' | 'read' = 'admin';
+
+    try {
+      masterKey = await unwrapMasterKey(p3.masterWrappedKey, password, p3.masterSalt);
+    } catch {
+      if (p3.readWrappedKey && p3.readSalt) {
+        try {
+          masterKey = await unwrapMasterKey(p3.readWrappedKey, password, p3.readSalt);
+          role = 'read';
+        } catch {
+          throw new Error('Wrong password.');
+        }
+      } else {
+        throw new Error('Wrong password.');
+      }
+    }
+
+    const iv = new Uint8Array(b64ToBuf(p3.iv));
+    const ciphertext = b64ToBuf(p3.ciphertext);
+    let plaintextBuf: ArrayBuffer;
+    try {
+      plaintextBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, masterKey, ciphertext);
+    } catch {
+      throw new Error('Corrupted data.');
+    }
+
+    const decoder = new TextDecoder();
+    const data = JSON.parse(decoder.decode(plaintextBuf)) as T;
+
+    if (role === 'admin') {
+      const editToken = await generateEditTokenV3(password, payload.stashId, new Uint8Array(b64ToBuf(p3.authTokenSalt)));
+      return { data, role, masterKey, editToken };
+    } else {
+      return { data, role };
+    }
+  }
+
   throw new Error('Unknown schema version');
 }
 
@@ -261,6 +378,50 @@ export async function updatePayloadV2(
   masterKey: CryptoKey,
   oldPayload: EncryptedPayloadV2
 ): Promise<EncryptedPayloadV2> {
+  const encoder = new TextEncoder();
+  const plaintext = encoder.encode(JSON.stringify(data));
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  
+  const ciphertextBuf = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    masterKey,
+    plaintext
+  );
+
+  return {
+    ...oldPayload,
+    iv: bufToB64(iv.buffer),
+    ciphertext: bufToB64(ciphertextBuf)
+  };
+}
+
+// ─── Encrypt (V3) ────────────────────────────────────────────────────────────
+
+export async function encryptV3(
+  data: object,
+  stashId: string,
+  adminPassword: string,
+  readPassword?: string
+): Promise<EncryptedPayloadV3> {
+  const masterKey = await generateMasterKey();
+  return (await buildEncryptResultV3(data, stashId, masterKey, adminPassword, { readPassword })).payload;
+}
+
+export async function encryptV3WithExistingMasterKey(
+  data: object,
+  stashId: string,
+  masterKey: CryptoKey,
+  adminPassword: string,
+  preserveReadCredentials?: ReadCredentials
+): Promise<EncryptResultV3> {
+  return buildEncryptResultV3(data, stashId, masterKey, adminPassword, { preserveReadCredentials });
+}
+
+export async function updatePayloadV3(
+  data: object,
+  masterKey: CryptoKey,
+  oldPayload: EncryptedPayloadV3
+): Promise<EncryptedPayloadV3> {
   const encoder = new TextEncoder();
   const plaintext = encoder.encode(JSON.stringify(data));
   const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));

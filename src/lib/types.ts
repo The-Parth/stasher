@@ -1,5 +1,5 @@
 // Schema version for future migrations
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // ─── Link ────────────────────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ export interface Stash {
 
 // ─── Encrypted Payload (stored in Vercel Blob) ─────────────────────────────
 
-export type EncryptedPayload = EncryptedPayloadV1 | EncryptedPayloadV2;
+export type EncryptedPayload = EncryptedPayloadV1 | EncryptedPayloadV2 | EncryptedPayloadV3;
 
 export interface EncryptedPayloadV1 {
   schemaVersion: 1;
@@ -60,6 +60,25 @@ export interface EncryptedPayloadV2 {
   readSalt?: string;         // base64-encoded
   readWrappedKey?: string;   // base64-encoded
 }
+
+export interface EncryptedPayloadV3 {
+  schemaVersion: 3;
+  stashId: string;
+  
+  iv: string;         // base64-encoded
+  ciphertext: string; // base64-encoded
+
+  masterSalt: string;        // base64-encoded
+  masterWrappedKey: string;  // base64-encoded
+  
+  // V3 specific auth mechanism
+  authTokenSalt: string;     // base64-encoded salt used for PBKDF2 derivation of editToken
+  authTokenVerifier: string; // base64-encoded SHA-256 hash of the derived token + salt
+
+  readSalt?: string;         // base64-encoded
+  readWrappedKey?: string;   // base64-encoded
+}
+
 
 // ─── Media types ─────────────────────────────────────────────────────────────
 

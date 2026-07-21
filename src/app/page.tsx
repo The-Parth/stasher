@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import CloneStashModal from '@/components/CloneStashModal';
-import { decrypt, encryptV2 } from '@/lib/crypto';
+import { decrypt, encryptV3 } from '@/lib/crypto';
 import type { Stash, EncryptedPayload } from '@/lib/types';
 
 export default function HomePage() {
@@ -36,7 +36,7 @@ export default function HomePage() {
       updatedAt: new Date().toISOString(),
     };
     
-    const payload = await encryptV2(updatedStash, newId, newPassword);
+    const payload = await encryptV3(updatedStash, newId, newPassword);
     const saveRes = await fetch('/api/stash', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
