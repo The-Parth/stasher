@@ -118,19 +118,18 @@ export default function StashSettingsModal({
         readWrappedKey = wrapped.wrappedKey;
       }
 
-      // We ensure the payload remains V3 (or gets bumped to V3). But wait,
-      // changing the read password DOES NOT change the master password, which means
-      // we can't derive a NEW edit token since we don't have the master password here.
-      // So if it's currently a V2 payload, we cannot upgrade it to V3 just by changing read password,
-      // because we can't generate the PBKDF2 token without the admin password.
-      // Wait! StashSettingsModal is only shown to admins. Admin password is NOT passed in here.
-      // So if schema is 2, changing read password would be tricky to upgrade to V3.
-      // We should mandate that the stash is already V3 before showing this settings modal.
+      const authTokenSaltArray = new Uint8Array(16);
+      crypto.getRandomValues(authTokenSaltArray);
+      const authTokenSalt = bufToB64(authTokenSaltArray.buffer);
+      const authTokenVerifier = await hashEditToken(editToken, authTokenSalt);
       
       const newPayload: EncryptedPayloadV3 = {
         ...(payload as EncryptedPayloadV3),
+        schemaVersion: 3,
         readSalt,
         readWrappedKey,
+        authTokenSalt,
+        authTokenVerifier,
       };
 
       // If newReadPw is empty, we remove the read credentials.
