@@ -83,8 +83,9 @@ export async function generateEditTokenV3(password: string, stashId: string, sal
   const baseKey = await crypto.subtle.importKey(
     'raw', encoder.encode(password + stashId), 'PBKDF2', false, ['deriveBits']
   );
+  const saltBuffer = new Uint8Array(salt).buffer;
   const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: saltBuffer, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
     baseKey,
     256 // 32 bytes
   );
